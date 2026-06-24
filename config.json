@@ -1,0 +1,28 @@
+{
+  "mappings": [
+    {
+      "trigger": [
+        "ctrl",
+        "p"
+      ],
+      "output": [
+        "ctrl",
+        "alt",
+        "w"
+      ],
+      "description": "Ctrl+P -> Ctrl+Alt+W",
+      "enabled": false
+    }
+  ],
+  "mouse_mappings": [
+    {
+      "button": "x1",
+      "output": [
+        "ctrl",
+        "w"
+      ],
+      "description": "鼠标侧键X1 -> Ctrl+W",
+      "enabled": false
+    }
+  ]
+}
