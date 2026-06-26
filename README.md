@@ -1,16 +1,16 @@
-# Mouse Click
+# Mouse Remapper
 
 键盘/鼠标按键重映射工具，支持将按键映射为其他快捷键组合。
 
 ## 安装
 
 ```bash
-pip install keyboard pynput
+pip install -r requirements.txt
 ```
 
 ## 使用
 
-双击 `启动.bat` 或运行：
+双击 `mouse_remapper.bat` 或运行：
 
 ```bash
 python app.py
@@ -24,15 +24,16 @@ python app.py
 - 可视化添加/编辑/删除映射
 - 支持录制按键组合
 - 系统托盘图标，最小化到托盘
-- 开机启动支持
+- 开机启动 / 固定到开始菜单
 
 ## 项目结构
 
 ```
-app.py      # 入口
-engine.py   # 核心引擎
-gui.py      # 图形界面
-config.json # 配置文件
+app.py               # 入口
+engine.py            # 核心引擎
+gui.py               # 图形界面
+config.json          # 配置文件
+mouse_remapper.bat   # 启动脚本
 ```
 
 ## 配置文件
@@ -60,10 +61,13 @@ config.json # 配置文件
 }
 ```
 
-## 开机启动
+## 辅助脚本
 
-- 安装：双击 `install_startup.bat`
-- 卸载：双击 `uninstall_startup.bat`
+| 脚本 | 说明 |
+|------|------|
+| `install_startup.bat` | 添加开机启动 |
+| `uninstall_startup.bat` | 移除开机启动 |
+| `pin_to_start.bat` | 创建快捷方式，可固定到开始菜单 |
 
 ## 支持的按键
 
