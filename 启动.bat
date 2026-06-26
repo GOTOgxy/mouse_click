@@ -1,3 +1,3 @@
 @echo off
 cd /d "%~dp0"
-start "" wscript.exe launch.vbs
+start "" pythonw app.py
