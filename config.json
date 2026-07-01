@@ -22,7 +22,7 @@
         "w"
       ],
       "description": "鼠标侧键X1 -> Ctrl+W",
-      "enabled": false
+      "enabled": true
     }
   ]
 }

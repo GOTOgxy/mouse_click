@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import ctypes
+import ctypes.wintypes as wintypes
 import queue
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -26,43 +27,114 @@ TRAY_ICON_ID = 1
 
 class NOTIFYICONDATAW(ctypes.Structure):
     _fields_ = [
-        ("cbSize", ctypes.c_ulong),
-        ("hWnd", ctypes.c_void_p),
-        ("uID", ctypes.c_uint),
-        ("uFlags", ctypes.c_uint),
-        ("uCallbackMessage", ctypes.c_uint),
-        ("hIcon", ctypes.c_void_p),
+        ("cbSize", wintypes.DWORD),
+        ("hWnd", wintypes.HWND),
+        ("uID", wintypes.UINT),
+        ("uFlags", wintypes.UINT),
+        ("uCallbackMessage", wintypes.UINT),
+        ("hIcon", wintypes.HANDLE),
         ("szTip", ctypes.c_wchar * 128),
-        ("dwState", ctypes.c_ulong),
-        ("dwStateMask", ctypes.c_ulong),
+        ("dwState", wintypes.DWORD),
+        ("dwStateMask", wintypes.DWORD),
         ("szInfo", ctypes.c_wchar * 256),
-        ("uTimeout", ctypes.c_uint),
+        ("uTimeout", wintypes.UINT),
         ("szInfoTitle", ctypes.c_wchar * 64),
-        ("dwInfoFlags", ctypes.c_ulong),
+        ("dwInfoFlags", wintypes.DWORD),
         ("guidItem", ctypes.c_byte * 16),
-        ("hBalloonIcon", ctypes.c_void_p),
+        ("hBalloonIcon", wintypes.HANDLE),
     ]
 
 
 class WNDCLASS(ctypes.Structure):
     _fields_ = [
-        ("style", ctypes.c_uint),
+        ("style", wintypes.UINT),
         ("lpfnWndProc", ctypes.c_void_p),
         ("cbClExtra", ctypes.c_int),
         ("cbWndExtra", ctypes.c_int),
-        ("hInstance", ctypes.c_void_p),
-        ("hIcon", ctypes.c_void_p),
-        ("hCursor", ctypes.c_void_p),
-        ("hbrBackground", ctypes.c_void_p),
-        ("lpszMenuName", ctypes.c_wchar_p),
-        ("lpszClassName", ctypes.c_wchar_p),
+        ("hInstance", wintypes.HINSTANCE),
+        ("hIcon", wintypes.HANDLE),
+        ("hCursor", wintypes.HANDLE),
+        ("hbrBackground", wintypes.HANDLE),
+        ("lpszMenuName", wintypes.LPCWSTR),
+        ("lpszClassName", wintypes.LPCWSTR),
     ]
 
 
+kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
+kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.CreateMutexW.restype = wintypes.HANDLE
+
 user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASS)]
-user32.CreateWindowExW.restype = ctypes.c_void_p
-user32.DefWindowProcW.restype = ctypes.c_void_p
-user32.DefWindowProcW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+user32.RegisterClassW.restype = wintypes.ATOM
+
+user32.CreateWindowExW.argtypes = [
+    wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID,
+]
+user32.CreateWindowExW.restype = wintypes.HWND
+
+user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.DefWindowProcW.restype = wintypes.LPARAM
+
+user32.DestroyWindow.argtypes = [wintypes.HWND]
+user32.DestroyWindow.restype = wintypes.BOOL
+
+user32.GetDC.argtypes = [wintypes.HWND]
+user32.GetDC.restype = wintypes.HDC
+
+user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+user32.ReleaseDC.restype = ctypes.c_int
+
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+user32.GetCursorPos.restype = wintypes.BOOL
+
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.restype = wintypes.BOOL
+
+user32.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.HBRUSH]
+user32.FillRect.restype = ctypes.c_int
+
+user32.CreateIconIndirect.argtypes = [ctypes.c_void_p]
+user32.CreateIconIndirect.restype = wintypes.HANDLE
+
+shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
+shell32.Shell_NotifyIconW.restype = wintypes.BOOL
+
+gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+gdi32.CreateCompatibleDC.restype = wintypes.HDC
+
+gdi32.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
+gdi32.CreateCompatibleBitmap.restype = wintypes.HBITMAP
+
+gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+gdi32.SelectObject.restype = wintypes.HGDIOBJ
+
+gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+gdi32.DeleteObject.restype = wintypes.BOOL
+
+gdi32.DeleteDC.argtypes = [wintypes.HDC]
+gdi32.DeleteDC.restype = wintypes.BOOL
+
+gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
+gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
+
+gdi32.SetBkMode.argtypes = [wintypes.HDC, ctypes.c_int]
+gdi32.SetBkMode.restype = ctypes.c_int
+
+gdi32.CreateFontW.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.LPCWSTR]
+gdi32.CreateFontW.restype = wintypes.HFONT
+
+gdi32.SetTextColor.argtypes = [wintypes.HDC, wintypes.COLORREF]
+gdi32.SetTextColor.restype = wintypes.COLORREF
+
+gdi32.TextOutW.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.LPCWSTR, ctypes.c_int]
+gdi32.TextOutW.restype = wintypes.BOOL
+
+gdi32.CreateBitmap.argtypes = [ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.UINT, ctypes.c_void_p]
+gdi32.CreateBitmap.restype = wintypes.HBITMAP
 
 
 class KeyCaptureDialog(tk.Toplevel):
@@ -338,8 +410,8 @@ class RemapperApp(tk.Tk):
         gdi32.SelectObject(hdc_mem, hbm)
 
         hbr_bg = gdi32.CreateSolidBrush(0x003366CC)
-        rect = (ctypes.c_int * 4)(0, 0, SIZE, SIZE)
-        user32.FillRect(hdc_mem, rect, hbr_bg)
+        rect = wintypes.RECT(0, 0, SIZE, SIZE)
+        user32.FillRect(hdc_mem, ctypes.byref(rect), hbr_bg)
         gdi32.DeleteObject(hbr_bg)
 
         gdi32.SetBkMode(hdc_mem, 1)
@@ -354,16 +426,16 @@ class RemapperApp(tk.Tk):
         hdc_mask = gdi32.CreateCompatibleDC(None)
         gdi32.SelectObject(hdc_mask, mask_bm)
         hbr_white = gdi32.CreateSolidBrush(0x00FFFFFF)
-        user32.FillRect(hdc_mask, rect, hbr_white)
+        user32.FillRect(hdc_mask, ctypes.byref(rect), hbr_white)
         gdi32.DeleteObject(hbr_white)
 
         class ICONINFO(ctypes.Structure):
             _fields_ = [
-                ("fIcon", ctypes.c_int),
-                ("xHotspot", ctypes.c_ulong),
-                ("yHotspot", ctypes.c_ulong),
-                ("hbmMask", ctypes.c_void_p),
-                ("hbmColor", ctypes.c_void_p),
+                ("fIcon", wintypes.BOOL),
+                ("xHotspot", wintypes.DWORD),
+                ("yHotspot", wintypes.DWORD),
+                ("hbmMask", wintypes.HBITMAP),
+                ("hbmColor", wintypes.HBITMAP),
             ]
 
         icon_info = ICONINFO(True, 0, 0, mask_bm, hbm)
@@ -382,7 +454,7 @@ class RemapperApp(tk.Tk):
         self._tray_event = 0
 
         self._tray_wndproc_ref = ctypes.WINFUNCTYPE(
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p
+            wintypes.LPARAM, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
         )(self._tray_wndproc_impl)
 
         wc = WNDCLASS()
@@ -433,10 +505,10 @@ class RemapperApp(tk.Tk):
         self.tray_menu.add_separator()
         self.tray_menu.add_command(label="退出", command=self._quit_app)
 
-        pt = (ctypes.c_long * 2)()
+        pt = wintypes.POINT()
         user32.GetCursorPos(ctypes.byref(pt))
         user32.SetForegroundWindow(self.tray_hwnd)
-        self.tray_menu.tk_popup(pt[0], pt[1])
+        self.tray_menu.tk_popup(pt.x, pt.y)
         self.tray_menu.grab_release()
 
     def _remove_tray_icon(self):
