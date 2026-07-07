@@ -52,6 +52,7 @@ class RemapperEngine:
         pressed_keys = set()
         lock = threading.Lock()
         triggered = [False]
+        suppressing = [False]
 
         def norm(name):
             n = {"ctrl_l": "ctrl", "ctrl_r": "ctrl",
@@ -70,14 +71,18 @@ class RemapperEngine:
             return None
 
         def do_output(keys_str):
+            suppressing[0] = True
             time.sleep(0.05)
             for k in keys_str:
                 kb.press(k.lower())
             for k in reversed(keys_str):
                 kb.release(k.lower())
+            suppressing[0] = False
 
         def on_event(event):
             if self._stop_event.is_set():
+                return
+            if suppressing[0]:
                 return
             name = event.name
             if event.event_type == "down":
