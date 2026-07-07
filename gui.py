@@ -608,19 +608,26 @@ class RemapperApp(tk.Tk):
         dlg = AddMappingDialog(self, "keyboard")
         self.wait_window(dlg)
         if dlg.result:
+            mapping = self._mapping_from_dialog(dlg, dlg.result.get("enabled", True))
             if dlg.mapping_type == "mouse":
-                mapping = {
-                    "button": dlg.result["button"],
-                    "output": dlg.result["output"],
-                    "description": dlg.result.get("description", ""),
-                    "enabled": dlg.result.get("enabled", True),
-                }
                 self.config.setdefault("mouse_mappings", []).append(mapping)
             else:
-                self.config.setdefault("mappings", []).append(dlg.result)
+                self.config.setdefault("mappings", []).append(mapping)
             save_config(self.config)
             self._refresh_list()
             self._restart_engine()
+
+    def _mapping_from_dialog(self, dlg, enabled):
+        if dlg.mapping_type == "mouse":
+            return {
+                "button": dlg.result["button"],
+                "output": dlg.result["output"],
+                "description": dlg.result.get("description", ""),
+                "enabled": enabled,
+            }
+        mapping = dict(dlg.result)
+        mapping["enabled"] = enabled
+        return mapping
 
     def _on_double_click(self, event):
         region = self.tree.identify("region", event.x, event.y)
@@ -689,15 +696,22 @@ class RemapperApp(tk.Tk):
 
         self.wait_window(dlg)
         if dlg.result:
+            old_enabled = old.get("enabled", True)
+            new_mapping = self._mapping_from_dialog(dlg, old_enabled)
+            keyboard_mappings = self.config.setdefault("mappings", [])
+            mouse_mappings = self.config.setdefault("mouse_mappings", [])
             if dlg.mapping_type == "mouse":
-                self.config["mouse_mappings"][idx] = {
-                    "button": dlg.result["button"],
-                    "output": dlg.result["output"],
-                    "description": dlg.result.get("description", ""),
-                    "enabled": dlg.result.get("enabled", True),
-                }
+                if is_keyboard:
+                    del keyboard_mappings[idx]
+                    mouse_mappings.append(new_mapping)
+                else:
+                    mouse_mappings[idx] = new_mapping
             else:
-                self.config["mappings"][idx] = dlg.result
+                if is_keyboard:
+                    keyboard_mappings[idx] = new_mapping
+                else:
+                    del mouse_mappings[idx]
+                    keyboard_mappings.append(new_mapping)
             save_config(self.config)
             self._refresh_list()
             self._restart_engine()
