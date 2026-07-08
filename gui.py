@@ -3,10 +3,14 @@
 import ctypes
 import ctypes.wintypes as wintypes
 import queue
+import time
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk
 
-from engine import load_config, save_config, RemapperEngine
+import customtkinter as ctk
+
+from engine import RemapperEngine, load_config, save_config
+
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -17,12 +21,14 @@ NIF_MESSAGE = 0x00000001
 NIF_ICON = 0x00000002
 NIF_TIP = 0x00000004
 NIM_ADD = 0x00000000
-NIM_MODIFY = 0x00000001
 NIM_DELETE = 0x00000002
-
 WM_LBUTTONDBLCLK = 0x0203
 WM_RBUTTONUP = 0x0205
 TRAY_ICON_ID = 1
+
+
+ctk.set_appearance_mode("system")
+ctk.set_default_color_theme("blue")
 
 
 class NOTIFYICONDATAW(ctypes.Structure):
@@ -60,200 +66,224 @@ class WNDCLASS(ctypes.Structure):
     ]
 
 
-kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
-kernel32.GetModuleHandleW.restype = wintypes.HMODULE
-
-kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
-kernel32.CreateMutexW.restype = wintypes.HANDLE
-
-user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASS)]
-user32.RegisterClassW.restype = wintypes.ATOM
-
-user32.CreateWindowExW.argtypes = [
-    wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
-    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-    wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID,
-]
-user32.CreateWindowExW.restype = wintypes.HWND
-
-user32.DefWindowProcW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-user32.DefWindowProcW.restype = wintypes.LPARAM
-
-user32.DestroyWindow.argtypes = [wintypes.HWND]
-user32.DestroyWindow.restype = wintypes.BOOL
-
-user32.GetDC.argtypes = [wintypes.HWND]
-user32.GetDC.restype = wintypes.HDC
-
-user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
-user32.ReleaseDC.restype = ctypes.c_int
-
-user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
-user32.GetCursorPos.restype = wintypes.BOOL
-
-user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-user32.SetForegroundWindow.restype = wintypes.BOOL
-
-user32.FillRect.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.HBRUSH]
-user32.FillRect.restype = ctypes.c_int
-
-user32.CreateIconIndirect.argtypes = [ctypes.c_void_p]
-user32.CreateIconIndirect.restype = wintypes.HANDLE
-
-shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
-shell32.Shell_NotifyIconW.restype = wintypes.BOOL
-
-gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
-gdi32.CreateCompatibleDC.restype = wintypes.HDC
-
-gdi32.CreateCompatibleBitmap.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int]
-gdi32.CreateCompatibleBitmap.restype = wintypes.HBITMAP
-
-gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
-gdi32.SelectObject.restype = wintypes.HGDIOBJ
-
-gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
-gdi32.DeleteObject.restype = wintypes.BOOL
-
-gdi32.DeleteDC.argtypes = [wintypes.HDC]
-gdi32.DeleteDC.restype = wintypes.BOOL
-
-gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
-gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
-
-gdi32.SetBkMode.argtypes = [wintypes.HDC, ctypes.c_int]
-gdi32.SetBkMode.restype = ctypes.c_int
-
-gdi32.CreateFontW.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.LPCWSTR]
-gdi32.CreateFontW.restype = wintypes.HFONT
-
-gdi32.SetTextColor.argtypes = [wintypes.HDC, wintypes.COLORREF]
-gdi32.SetTextColor.restype = wintypes.COLORREF
-
-gdi32.TextOutW.argtypes = [wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.LPCWSTR, ctypes.c_int]
-gdi32.TextOutW.restype = wintypes.BOOL
-
-gdi32.CreateBitmap.argtypes = [ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.UINT, ctypes.c_void_p]
-gdi32.CreateBitmap.restype = wintypes.HBITMAP
+def _clamp(value, low, high):
+    return max(low, min(high, value))
 
 
-class KeyCaptureDialog(tk.Toplevel):
-    def __init__(self, parent, title="录制按键"):
+def _compute_ui_scale(root):
+    try:
+        dpi_scale = root.winfo_fpixels("1i") / 96.0
+    except tk.TclError:
+        dpi_scale = 1.0
+    screen_w = max(root.winfo_screenwidth(), 1)
+    screen_h = max(root.winfo_screenheight(), 1)
+    resolution_scale = min(screen_w / 1920, screen_h / 1080)
+    return _clamp(max(dpi_scale, resolution_scale, 1.0), 1.0, 1.45)
+
+
+def scaled(widget, value):
+    scale = getattr(widget.winfo_toplevel(), "ui_scale", 1.0)
+    return int(round(value * scale))
+
+
+def ui_font(widget, size, weight=None):
+    return ctk.CTkFont(family="Microsoft YaHei UI", size=scaled(widget, size), weight=weight)
+
+
+def _dialog_font(widget, delta=0, weight=None):
+    size = 19 + delta
+    return ctk.CTkFont(family="Microsoft YaHei UI", size=scaled(widget, size), weight=weight)
+
+
+def _readonly_entry(parent, variable):
+    entry = ctk.CTkEntry(parent, textvariable=variable, font=_dialog_font(parent))
+    entry.bind("<Key>", lambda _event: "break")
+    return entry
+
+
+class _BindXDialog(ctk.CTkToplevel):
+    def __init__(self, parent, title, width, height):
         super().__init__(parent)
-        self.title(title)
-        self.geometry("350x150")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-
+        self._bindx_root = parent.winfo_toplevel()
+        self.ui_scale = getattr(self._bindx_root, "ui_scale", 1.0)
         self.result = None
-        self._pressed = set()
-        self._captured = []
 
+        self.title(title)
+        self.geometry(f"{scaled(self, width)}x{scaled(self, height)}")
+        self.minsize(scaled(self, width), scaled(self, height))
+        self.resizable(False, False)
+        self.configure(fg_color=("#f4f4f5", "#18181b"))
+        self.transient(self._bindx_root)
+        self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
-        frame = ttk.Frame(self, padding=20)
-        frame.pack(fill=tk.BOTH, expand=True)
+        self.body = ctk.CTkFrame(self, fg_color="transparent")
+        self.body.pack(fill=tk.BOTH, expand=True, padx=scaled(self, 20), pady=scaled(self, 18))
+        self.after(50, self.focus_force)
 
-        ttk.Label(frame, text="请按下目标按键组合：", font=("", 11)).pack(pady=(0, 10))
+    def _center_on_parent(self):
+        self.update_idletasks()
+        parent = self._bindx_root
+        x = parent.winfo_x() + max(0, (parent.winfo_width() - self.winfo_width()) // 2)
+        y = parent.winfo_y() + max(0, (parent.winfo_height() - self.winfo_height()) // 2)
+        self.geometry(f"+{x}+{y}")
 
-        self.key_var = tk.StringVar(value="等待输入...")
-        ttk.Label(frame, textvariable=self.key_var, font=("", 13, "bold")).pack(pady=(0, 15))
+    def _label(self, parent, text, width=118):
+        return ctk.CTkLabel(parent, text=text, width=scaled(self, width), anchor="w", font=_dialog_font(self))
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack()
-        ttk.Button(btn_frame, text="确认", command=self._on_ok, width=8).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="清除", command=self._on_clear, width=8).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="取消", command=self._on_cancel, width=8).pack(side=tk.LEFT, padx=5)
+    def _row(self, parent=None, pady=(0, 10)):
+        row = ctk.CTkFrame(parent or self.body, fg_color="transparent")
+        row.pack(fill=tk.X, pady=(scaled(self, pady[0]), scaled(self, pady[1])))
+        return row
 
-        self.bind("<KeyPress>", self._on_key_press)
-        self.bind("<KeyRelease>", self._on_key_release)
-        self.focus_set()
+    def _button_row(self):
+        row = ctk.CTkFrame(self.body, fg_color="transparent")
+        row.pack(fill=tk.X, pady=(scaled(self, 12), 0))
+        return row
 
-    def _on_key_release(self, event):
-        name = self._normalize(event.keysym)
-        self._pressed.discard(name)
-
-    def _on_key_press(self, event):
-        name = self._normalize(event.keysym)
-        if name in ("ctrl", "shift", "alt", "cmd"):
-            self._pressed.add(name)
-            return
-
-        combo = sorted(self._pressed | {name})
-        self._captured = combo
-        self.key_var.set(" + ".join(combo))
-
-    def _normalize(self, keysym):
-        mapping = {
-            "control_l": "ctrl", "control_r": "ctrl",
-            "shift_l": "shift", "shift_r": "shift",
-            "alt_l": "alt", "alt_r": "alt",
-            "super_l": "cmd", "super_r": "cmd",
-        }
-        return mapping.get(keysym.lower(), keysym.lower())
-
-    def _on_clear(self):
-        self._pressed.clear()
-        self._captured = []
-        self.key_var.set("等待输入...")
-
-    def _on_ok(self):
-        if self._captured:
-            self.result = self._captured
-            self.destroy()
+    def _secondary_button(self, parent, text, command, width=84):
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=scaled(self, width),
+            font=_dialog_font(self),
+            fg_color="#52525b",
+            hover_color="#3f3f46",
+        )
 
     def _on_cancel(self):
         self.result = None
         self.destroy()
 
 
-class MouseCaptureDialog(tk.Toplevel):
-    def __init__(self, parent, title="录制鼠标按键"):
-        super().__init__(parent)
-        self.title(title)
-        self.geometry("350x150")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
+class KeyCaptureDialog(_BindXDialog):
+    KEYSYM_MAP = {
+        "return": "enter",
+        "escape": "esc",
+        "space": "space",
+        "left": "left",
+        "right": "right",
+        "up": "up",
+        "down": "down",
+        "home": "home",
+        "end": "end",
+        "prior": "pageup",
+        "next": "pagedown",
+        "insert": "insert",
+        "delete": "delete",
+        "backspace": "backspace",
+        "caps_lock": "caps lock",
+        "tab": "tab",
+    }
+    MODIFIER_MAP = {
+        "control_l": "ctrl",
+        "control_r": "ctrl",
+        "alt_l": "alt",
+        "alt_r": "alt",
+        "shift_l": "shift",
+        "shift_r": "shift",
+        "super_l": "win",
+        "super_r": "win",
+        "meta_l": "win",
+        "meta_r": "win",
+    }
+    MODIFIER_ORDER = ("ctrl", "alt", "shift", "win")
 
-        self.result = None
+    def __init__(self, parent, title="录制按键"):
+        super().__init__(parent, title, 540, 230)
+        self._pressed = set()
+        self._captured = []
+
+        ctk.CTkLabel(self.body, text="请按下目标按键组合", font=_dialog_font(self, 2, "bold")).pack(anchor=tk.W, pady=(0, scaled(self, 10)))
+        self.key_var = tk.StringVar(value="等待输入...")
+        ctk.CTkLabel(self.body, textvariable=self.key_var, font=_dialog_font(self, 5, "bold")).pack(fill=tk.X, pady=(0, scaled(self, 18)))
+
+        btns = self._button_row()
+        self.ok_btn = ctk.CTkButton(btns, text="确认", command=self._on_ok, width=scaled(self, 88), font=_dialog_font(self))
+        self.ok_btn.pack(side=tk.RIGHT, padx=(scaled(self, 8), 0))
+        self.ok_btn.configure(state=tk.DISABLED)
+        self._secondary_button(btns, "取消", self._on_cancel).pack(side=tk.RIGHT, padx=(scaled(self, 8), 0))
+        self._secondary_button(btns, "清除", self._on_clear).pack(side=tk.RIGHT)
+
+        self.bind("<KeyPress>", self._on_key_press)
+        self.bind("<KeyRelease>", self._on_key_release)
+        self._center_on_parent()
+
+    def _normalize(self, keysym):
+        key = keysym.lower()
+        if key in self.MODIFIER_MAP:
+            return self.MODIFIER_MAP[key]
+        if len(key) == 1:
+            return key.lower()
+        if key.startswith("f") and key[1:].isdigit():
+            return key.lower()
+        return self.KEYSYM_MAP.get(key, key)
+
+    def _on_key_release(self, event):
+        self._pressed.discard(self._normalize(event.keysym))
+
+    def _on_key_press(self, event):
+        name = self._normalize(event.keysym)
+        if name in self.MODIFIER_ORDER:
+            self._pressed.add(name)
+            return
+        modifiers = [mod for mod in self.MODIFIER_ORDER if mod in self._pressed]
+        self._captured = modifiers + [name]
+        self.key_var.set(" + ".join(self._captured))
+        self.ok_btn.configure(state=tk.NORMAL)
+
+    def _on_clear(self):
+        self._pressed.clear()
+        self._captured = []
+        self.key_var.set("等待输入...")
+        self.ok_btn.configure(state=tk.DISABLED)
+
+    def _on_ok(self):
+        if self._captured:
+            self.result = self._captured
+            self.destroy()
+
+
+class MouseCaptureDialog(_BindXDialog):
+    def __init__(self, parent, title="录制鼠标按键"):
+        super().__init__(parent, title, 540, 230)
         self._listener = None
 
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-        frame = ttk.Frame(self, padding=20)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        ttk.Label(frame, text="请按下鼠标按键：", font=("", 11)).pack(pady=(0, 10))
-
+        ctk.CTkLabel(self.body, text="请按下鼠标按键", font=_dialog_font(self, 2, "bold")).pack(anchor=tk.W, pady=(0, scaled(self, 10)))
         self.key_var = tk.StringVar(value="等待输入...")
-        ttk.Label(frame, textvariable=self.key_var, font=("", 13, "bold")).pack(pady=(0, 15))
+        ctk.CTkLabel(self.body, textvariable=self.key_var, font=_dialog_font(self, 5, "bold")).pack(fill=tk.X, pady=(0, scaled(self, 18)))
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack()
-        ttk.Button(btn_frame, text="确认", command=self._on_ok, width=8).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="取消", command=self._on_cancel, width=8).pack(side=tk.LEFT, padx=5)
+        btns = self._button_row()
+        self.ok_btn = ctk.CTkButton(btns, text="确认", command=self._on_ok, width=scaled(self, 88), font=_dialog_font(self))
+        self.ok_btn.pack(side=tk.RIGHT, padx=(scaled(self, 8), 0))
+        self.ok_btn.configure(state=tk.DISABLED)
+        self._secondary_button(btns, "取消", self._on_cancel).pack(side=tk.RIGHT)
 
         self._start_listener()
+        self._center_on_parent()
 
     def _start_listener(self):
-        from pynput import mouse as pynput_mouse
+        try:
+            from pynput import mouse as pynput_mouse
+        except ImportError as exc:
+            self.key_var.set(f"鼠标监听不可用：{exc}")
+            return
 
-        def on_click(x, y, button, pressed):
+        def on_click(_x, _y, button, pressed):
             if pressed:
-                name = button.name
-                self.after(0, lambda: self._on_detected(name))
+                self.after(0, lambda: self._on_detected(getattr(button, "name", str(button))))
 
         self._listener = pynput_mouse.Listener(on_click=on_click)
         self._listener.start()
 
     def _on_detected(self, name):
         self.key_var.set(name)
+        self.ok_btn.configure(state=tk.NORMAL)
 
     def _on_ok(self):
         val = self.key_var.get()
-        if val and val != "等待输入...":
+        if val and val != "等待输入..." and not val.startswith("鼠标监听不可用"):
             self.result = val
         self._stop_listener()
         self.destroy()
@@ -269,89 +299,74 @@ class MouseCaptureDialog(tk.Toplevel):
             self._listener = None
 
 
-class AddMappingDialog(tk.Toplevel):
+class AddMappingDialog(_BindXDialog):
     def __init__(self, parent, mapping_type="keyboard"):
-        super().__init__(parent)
-        self.title("添加映射")
-        self.geometry("400x230")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-
-        self.result = None
+        super().__init__(parent, "映射设置", 660, 430)
         self.mapping_type = mapping_type
 
-        frame = ttk.Frame(self, padding=20)
-        frame.pack(fill=tk.BOTH, expand=True)
-
-        row_type = ttk.Frame(frame)
-        row_type.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(row_type, text="类型：", width=8).pack(side=tk.LEFT)
         self.type_var = tk.StringVar(value=mapping_type)
-        self.type_combo = ttk.Combobox(row_type, textvariable=self.type_var, values=["keyboard", "mouse"], state="readonly", width=15)
-        self.type_combo.pack(side=tk.LEFT)
-        self.type_combo.bind("<<ComboboxSelected>>", self._on_type_changed)
-
-        self.trigger_frame = ttk.Frame(frame)
-        self.trigger_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(self.trigger_frame, text="触发键：", width=8).pack(side=tk.LEFT)
         self.trigger_var = tk.StringVar(value="")
-        ttk.Entry(self.trigger_frame, textvariable=self.trigger_var, state="readonly", width=20).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(self.trigger_frame, text="录制", command=self._capture_trigger, width=6).pack(side=tk.LEFT, padx=(5, 0))
-
-        self.mouse_frame = ttk.Frame(frame)
-        self.mouse_frame.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(self.mouse_frame, text="鼠标按键：", width=8).pack(side=tk.LEFT)
         self.button_var = tk.StringVar(value="")
-        self.button_combo = ttk.Combobox(self.mouse_frame, textvariable=self.button_var, values=["left", "right", "middle", "x1", "x2"], state="readonly", width=12)
-        self.button_combo.pack(side=tk.LEFT)
-        ttk.Button(self.mouse_frame, text="录制", command=self._capture_mouse, width=6).pack(side=tk.LEFT, padx=(5, 0))
-
-        row_out = ttk.Frame(frame)
-        row_out.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(row_out, text="输出键：", width=8).pack(side=tk.LEFT)
         self.output_var = tk.StringVar(value="")
-        ttk.Entry(row_out, textvariable=self.output_var, state="readonly", width=20).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(row_out, text="录制", command=self._capture_output, width=6).pack(side=tk.LEFT, padx=(5, 0))
-
-        row_desc = ttk.Frame(frame)
-        row_desc.pack(fill=tk.X, pady=(0, 10))
-        ttk.Label(row_desc, text="描述：", width=8).pack(side=tk.LEFT)
         self.desc_var = tk.StringVar(value="")
-        ttk.Entry(row_desc, textvariable=self.desc_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        btn_frame = ttk.Frame(frame)
-        btn_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(btn_frame, text="确认", command=self._on_ok).pack(side=tk.RIGHT, padx=5)
-        ttk.Button(btn_frame, text="取消", command=self._on_cancel).pack(side=tk.RIGHT)
+        row = self._row()
+        self._label(row, "类型：").pack(side=tk.LEFT)
+        ctk.CTkOptionMenu(row, values=["keyboard", "mouse"], variable=self.type_var, command=self._on_type_changed, width=scaled(self, 180), font=_dialog_font(self)).pack(side=tk.LEFT)
+
+        self.trigger_frame = self._row()
+        self._label(self.trigger_frame, "触发键：").pack(side=tk.LEFT)
+        _readonly_entry(self.trigger_frame, self.trigger_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ctk.CTkButton(self.trigger_frame, text="录制", command=self._capture_trigger, width=scaled(self, 82), font=_dialog_font(self)).pack(side=tk.LEFT, padx=(scaled(self, 8), 0))
+
+        self.mouse_frame = self._row()
+        self._label(self.mouse_frame, "鼠标按键：").pack(side=tk.LEFT)
+        ctk.CTkOptionMenu(self.mouse_frame, values=["left", "right", "middle", "x1", "x2"], variable=self.button_var, width=scaled(self, 180), font=_dialog_font(self)).pack(side=tk.LEFT)
+        ctk.CTkButton(self.mouse_frame, text="录制", command=self._capture_mouse, width=scaled(self, 82), font=_dialog_font(self)).pack(side=tk.LEFT, padx=(scaled(self, 8), 0))
+
+        row = self._row()
+        self._label(row, "输出键：").pack(side=tk.LEFT)
+        _readonly_entry(row, self.output_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ctk.CTkButton(row, text="录制", command=self._capture_output, width=scaled(self, 82), font=_dialog_font(self)).pack(side=tk.LEFT, padx=(scaled(self, 8), 0))
+
+        row = self._row()
+        self._label(row, "描述：").pack(side=tk.LEFT)
+        ctk.CTkEntry(row, textvariable=self.desc_var, font=_dialog_font(self)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        btns = self._button_row()
+        ctk.CTkButton(btns, text="确认", command=self._on_ok, width=scaled(self, 92), font=_dialog_font(self)).pack(side=tk.RIGHT, padx=(scaled(self, 8), 0))
+        self._secondary_button(btns, "取消", self._on_cancel, width=92).pack(side=tk.RIGHT)
 
         self._on_type_changed()
+        self._center_on_parent()
 
-    def _on_type_changed(self, event=None):
+    def _on_type_changed(self, _value=None):
         self.mapping_type = self.type_var.get()
         if self.mapping_type == "keyboard":
-            self.trigger_frame.pack(fill=tk.X, pady=(0, 10))
+            self.trigger_frame.pack(fill=tk.X, pady=(0, scaled(self, 10)))
             self.mouse_frame.pack_forget()
         else:
             self.trigger_frame.pack_forget()
-            self.mouse_frame.pack(fill=tk.X, pady=(0, 10))
+            self.mouse_frame.pack(fill=tk.X, pady=(0, scaled(self, 10)))
+            if not self.button_var.get():
+                self.button_var.set("x1")
 
     def _capture_trigger(self):
         dlg = KeyCaptureDialog(self, "录制触发键")
         self.wait_window(dlg)
-        if dlg.result:
+        if getattr(dlg, "result", None):
             self.trigger_var.set(" + ".join(dlg.result))
 
     def _capture_output(self):
         dlg = KeyCaptureDialog(self, "录制输出键")
         self.wait_window(dlg)
-        if dlg.result:
+        if getattr(dlg, "result", None):
             self.output_var.set(" + ".join(dlg.result))
 
     def _capture_mouse(self):
         dlg = MouseCaptureDialog(self, "录制鼠标按键")
         self.wait_window(dlg)
-        if dlg.result:
+        if getattr(dlg, "result", None):
             self.button_var.set(dlg.result)
 
     def _on_ok(self):
@@ -368,27 +383,28 @@ class AddMappingDialog(tk.Toplevel):
                 return
 
         self.result = {
-            "trigger": [k.strip() for k in trigger.split("+")],
-            "output": [k.strip() for k in output.split("+")],
+            "trigger": [k.strip() for k in trigger.split("+") if k.strip()],
+            "output": [k.strip() for k in output.split("+") if k.strip()],
             "description": self.desc_var.get().strip() or f"{trigger if self.mapping_type == 'keyboard' else 'Mouse ' + self.button_var.get()} -> {output}",
             "enabled": True,
         }
         if self.mapping_type == "mouse":
             self.result["button"] = self.button_var.get()
-
-        self.destroy()
-
-    def _on_cancel(self):
-        self.result = None
         self.destroy()
 
 
-class RemapperApp(tk.Tk):
+class RemapperApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.ui_scale = _compute_ui_scale(self)
+        ctk.set_widget_scaling(self.ui_scale)
+        ctk.set_window_scaling(self.ui_scale)
+        self.tk.call("tk", "scaling", self.ui_scale)
+
         self.title("按键重映射")
-        self.geometry("700x400")
-        self.minsize(600, 300)
+        self.geometry("1120x760")
+        self.minsize(900, 620)
+        self.configure(fg_color=("#f4f4f5", "#18181b"))
 
         self.config = load_config()
         self.engine = RemapperEngine()
@@ -396,21 +412,44 @@ class RemapperApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        self._setup_tree_style()
         self._create_tray_icon()
         self._create_ui()
         self._refresh_list()
         self._start_engine()
         self._poll_tray_queue()
 
+    def _setup_tree_style(self):
+        style = ttk.Style(self)
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            borderwidth=0,
+            relief="flat",
+            background="#ffffff",
+            fieldbackground="#ffffff",
+            foreground="#18181b",
+            font=("Microsoft YaHei UI", scaled(self, 20)),
+            rowheight=scaled(self, 66),
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#e4e4e7",
+            foreground="#27272a",
+            relief="flat",
+            font=("Microsoft YaHei UI", scaled(self, 21), "bold"),
+        )
+        style.map("Treeview", background=[("selected", "#2563eb")], foreground=[("selected", "#ffffff")])
+
     def _create_programmatic_icon(self):
-        SIZE = 16
+        size = 16
         hdc_screen = user32.GetDC(None)
         hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
-        hbm = gdi32.CreateCompatibleBitmap(hdc_screen, SIZE, SIZE)
+        hbm = gdi32.CreateCompatibleBitmap(hdc_screen, size, size)
         gdi32.SelectObject(hdc_mem, hbm)
 
         hbr_bg = gdi32.CreateSolidBrush(0x003366CC)
-        rect = wintypes.RECT(0, 0, SIZE, SIZE)
+        rect = wintypes.RECT(0, 0, size, size)
         user32.FillRect(hdc_mem, ctypes.byref(rect), hbr_bg)
         gdi32.DeleteObject(hbr_bg)
 
@@ -422,7 +461,7 @@ class RemapperApp(tk.Tk):
         gdi32.SelectObject(hdc_mem, old_font)
         gdi32.DeleteObject(hfont)
 
-        mask_bm = gdi32.CreateBitmap(SIZE, SIZE, 1, 1, None)
+        mask_bm = gdi32.CreateBitmap(size, size, 1, 1, None)
         hdc_mask = gdi32.CreateCompatibleDC(None)
         gdi32.SelectObject(hdc_mask, mask_bm)
         hbr_white = gdi32.CreateSolidBrush(0x00FFFFFF)
@@ -446,7 +485,6 @@ class RemapperApp(tk.Tk):
         gdi32.DeleteDC(hdc_mask)
         gdi32.DeleteDC(hdc_mem)
         user32.ReleaseDC(None, hdc_screen)
-
         return h_icon
 
     def _create_tray_icon(self):
@@ -468,15 +506,13 @@ class RemapperApp(tk.Tk):
             0, 0, 0, 0, 0, None, None, wc.hInstance, None
         )
 
-        h_icon = self._create_programmatic_icon()
-
         nid = NOTIFYICONDATAW()
         nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
         nid.hWnd = self.tray_hwnd
         nid.uID = TRAY_ICON_ID
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         nid.uCallbackMessage = 0x0400
-        nid.hIcon = h_icon
+        nid.hIcon = self._create_programmatic_icon()
         nid.szTip = "按键重映射"
         shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
 
@@ -491,9 +527,7 @@ class RemapperApp(tk.Tk):
                 ev = self._tray_queue.get_nowait()
                 if ev == WM_RBUTTONUP:
                     self._show_tray_menu()
-                elif ev == 0x0202:
-                    self._show_window()
-                elif ev == WM_LBUTTONDBLCLK:
+                elif ev in {0x0202, WM_LBUTTONDBLCLK}:
                     self._show_window()
         except queue.Empty:
             pass
@@ -527,43 +561,42 @@ class RemapperApp(tk.Tk):
         self.focus_force()
 
     def _create_ui(self):
-        toolbar = ttk.Frame(self, padding=5)
-        toolbar.pack(fill=tk.X)
+        outer = ctk.CTkFrame(self, fg_color="transparent")
+        outer.pack(fill=tk.BOTH, expand=True, padx=scaled(self, 18), pady=scaled(self, 18))
 
-        ttk.Button(toolbar, text="添加映射", command=self._add_mapping, width=12).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="删除", command=self._delete_entry, width=8).pack(side=tk.LEFT, padx=2)
-        ttk.Button(toolbar, text="编辑", command=self._edit_entry, width=8).pack(side=tk.LEFT, padx=2)
+        header = ctk.CTkFrame(outer, fg_color="transparent")
+        header.pack(fill=tk.X, pady=(0, scaled(self, 12)))
+        ctk.CTkLabel(header, text="鼠标映射", font=ui_font(self, 20, "bold")).pack(side=tk.LEFT)
 
-        ttk.Separator(toolbar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-
+        toolbar = ctk.CTkFrame(outer, corner_radius=10)
+        toolbar.pack(fill=tk.X, pady=(0, scaled(self, 12)))
+        ctk.CTkButton(toolbar, text="添加", command=self._add_mapping, width=76).pack(side=tk.LEFT, padx=(12, 6), pady=10)
+        ctk.CTkButton(toolbar, text="编辑", command=self._edit_entry, width=76).pack(side=tk.LEFT, padx=6, pady=10)
+        ctk.CTkButton(toolbar, text="删除", command=self._delete_entry, width=76, fg_color="#52525b", hover_color="#3f3f46").pack(side=tk.LEFT, padx=6, pady=10)
         self.running_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(toolbar, text="运行中", variable=self.running_var, command=self._toggle_engine).pack(side=tk.LEFT, padx=2)
+        ctk.CTkSwitch(toolbar, text="运行中", variable=self.running_var, onvalue=True, offvalue=False, command=self._toggle_engine, font=ui_font(self, 14)).pack(side=tk.LEFT, padx=(scaled(self, 18), 0), pady=10)
+        ctk.CTkButton(toolbar, text="退出", command=self._quit_app, width=76, fg_color="#991b1b", hover_color="#7f1d1d").pack(side=tk.RIGHT, padx=(6, 12), pady=10)
 
-        ttk.Button(toolbar, text="退出", command=self._quit_app, width=8).pack(side=tk.RIGHT, padx=2)
-
-        list_frame = ttk.Frame(self, padding=5)
+        list_frame = ctk.CTkFrame(outer, corner_radius=10)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
         columns = ("enabled", "type", "trigger", "output", "desc")
         self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", selectmode="browse")
-
         self.tree.heading("enabled", text="启用")
         self.tree.heading("type", text="类型")
         self.tree.heading("trigger", text="触发")
         self.tree.heading("output", text="输出")
         self.tree.heading("desc", text="描述")
-
-        self.tree.column("enabled", width=50, minwidth=40, anchor=tk.CENTER)
-        self.tree.column("type", width=60, minwidth=50, anchor=tk.CENTER)
-        self.tree.column("trigger", width=150, minwidth=100)
-        self.tree.column("output", width=150, minwidth=100)
-        self.tree.column("desc", width=200, minwidth=100)
+        self.tree.column("enabled", width=80, minwidth=60, anchor=tk.CENTER)
+        self.tree.column("type", width=90, minwidth=70, anchor=tk.CENTER)
+        self.tree.column("trigger", width=220, minwidth=120)
+        self.tree.column("output", width=220, minwidth=120)
+        self.tree.column("desc", width=360, minwidth=140)
 
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
-
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(scaled(self, 12), 0), pady=scaled(self, 12))
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, scaled(self, 12)), pady=scaled(self, 12))
 
         self.tree.bind("<Double-1>", self._on_double_click)
         self.tree.bind("<Button-3>", self._on_right_click)
@@ -574,35 +607,35 @@ class RemapperApp(tk.Tk):
         self.context_menu.add_separator()
         self.context_menu.add_command(label="删除", command=self._delete_entry)
 
-        status_frame = ttk.Frame(self, padding=(5, 2))
+        status_frame = ctk.CTkFrame(outer, fg_color="transparent")
         status_frame.pack(fill=tk.X)
-        self.status_label = ttk.Label(status_frame, text="就绪")
-        self.status_label.pack(side=tk.LEFT)
+        self.status_label = ctk.CTkLabel(status_frame, text="就绪", text_color="#71717a", font=ui_font(self, 14))
+        self.status_label.pack(side=tk.LEFT, padx=2, pady=(scaled(self, 8), 0))
 
     def _refresh_list(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         idx = 0
-        for m in self.config.get("mappings", []):
-            trigger = " + ".join(m.get("trigger", []))
-            output = " + ".join(m.get("output", []))
-            desc = m.get("description", f"{trigger} -> {output}")
-            enabled = "✓" if m.get("enabled", True) else "✗"
+        for mapping in self.config.get("mappings", []):
+            trigger = " + ".join(mapping.get("trigger", []))
+            output = " + ".join(mapping.get("output", []))
+            desc = mapping.get("description", f"{trigger} -> {output}")
+            enabled = "✓" if mapping.get("enabled", True) else "✗"
             self.tree.insert("", tk.END, iid=f"k{idx}", values=(enabled, "键盘", trigger, output, desc))
             idx += 1
 
         idx = 0
-        for m in self.config.get("mouse_mappings", []):
-            button = m.get("button", "")
-            output = " + ".join(m.get("output", []))
-            desc = m.get("description", f"Mouse {button} -> {output}")
-            enabled = "✓" if m.get("enabled", True) else "✗"
+        for mapping in self.config.get("mouse_mappings", []):
+            button = mapping.get("button", "")
+            output = " + ".join(mapping.get("output", []))
+            desc = mapping.get("description", f"Mouse {button} -> {output}")
+            enabled = "✓" if mapping.get("enabled", True) else "✗"
             self.tree.insert("", tk.END, iid=f"m{idx}", values=(enabled, "鼠标", f"Mouse {button}", output, desc))
             idx += 1
 
         total = len(self.config.get("mappings", [])) + len(self.config.get("mouse_mappings", []))
-        self.status_label.config(text=f"共 {total} 个映射")
+        self.status_label.configure(text=f"共 {total} 个映射")
 
     def _add_mapping(self):
         dlg = AddMappingDialog(self, "keyboard")
@@ -631,32 +664,21 @@ class RemapperApp(tk.Tk):
 
     def _on_double_click(self, event):
         region = self.tree.identify("region", event.x, event.y)
-        if region == "cell":
-            column = self.tree.identify_column(event.x)
-            if column == "#1":
-                self._toggle_enabled()
+        if region == "cell" and self.tree.identify_column(event.x) == "#1":
+            self._toggle_enabled()
 
     def _toggle_enabled(self):
         sel = self.tree.selection()
         if not sel:
             return
-
         item_id = sel[0]
         is_keyboard = item_id.startswith("k")
         idx = int(item_id[1:])
-
-        if is_keyboard:
-            mappings = self.config.get("mappings", [])
-            if idx >= len(mappings):
-                return
-            m = mappings[idx]
-        else:
-            mappings = self.config.get("mouse_mappings", [])
-            if idx >= len(mappings):
-                return
-            m = mappings[idx]
-
-        m["enabled"] = not m.get("enabled", True)
+        mappings = self.config.get("mappings", []) if is_keyboard else self.config.get("mouse_mappings", [])
+        if idx >= len(mappings):
+            return
+        mapping = mappings[idx]
+        mapping["enabled"] = not mapping.get("enabled", True)
         save_config(self.config)
         self._refresh_list()
         self._restart_engine()
@@ -664,7 +686,7 @@ class RemapperApp(tk.Tk):
     def _edit_entry(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("提示", "请先选择一个映射")
+            messagebox.showinfo("提示", "请先选择一个映射", parent=self)
             return
 
         item_id = sel[0]
@@ -719,25 +741,17 @@ class RemapperApp(tk.Tk):
     def _delete_entry(self):
         sel = self.tree.selection()
         if not sel:
-            messagebox.showinfo("提示", "请先选择一个映射")
+            messagebox.showinfo("提示", "请先选择一个映射", parent=self)
             return
-
-        if not messagebox.askyesno("确认", "确定要删除这个映射吗？"):
+        if not messagebox.askyesno("确认", "确定要删除这个映射吗？", parent=self):
             return
 
         item_id = sel[0]
         is_keyboard = item_id.startswith("k")
         idx = int(item_id[1:])
-
-        if is_keyboard:
-            mappings = self.config.get("mappings", [])
-            if idx < len(mappings):
-                del mappings[idx]
-        else:
-            mappings = self.config.get("mouse_mappings", [])
-            if idx < len(mappings):
-                del mappings[idx]
-
+        mappings = self.config.get("mappings", []) if is_keyboard else self.config.get("mouse_mappings", [])
+        if idx < len(mappings):
+            del mappings[idx]
         save_config(self.config)
         self._refresh_list()
         self._restart_engine()
@@ -756,7 +770,6 @@ class RemapperApp(tk.Tk):
 
     def _restart_engine(self):
         self.engine.stop()
-        import time
         time.sleep(0.1)
         if self.running_var.get():
             self.engine.start(self.config)
